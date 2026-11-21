@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <androidx.camera.view.PreviewView
+        android:id="@+id/previewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@+id/bottomPanel" />
+
+    <!-- Top bar -->
+    <LinearLayout
+        android:id="@+id/topBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentTop="true"
+        android:background="#80000000"
+        android:orientation="horizontal"
+        android:padding="8dp">
+
+        <Button
+            android:id="@+id/btnFlash"
+            style="@style/CamTopButton"
+            android:text="⚡ Auto" />
+
+        <Button
+            android:id="@+id/btnTimer"
+            style="@style/CamTopButton"
+            android:text="⏱ Off" />
+
+        <Button
+            android:id="@+id/btnRatio"
+            style="@style/CamTopButton"
+            android:text="4:3" />
+
+        <Button
+            android:id="@+id/btnHdr"
+            style="@style/CamTopButton"
+            android:text="HDR Off" />
+
+        <TextView
+            android:id="@+id/txtModeHint"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="end"
+            android:text="Foto"
+            android:textColor="#FFD700"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Panorama guide, hidden unless Panorama mode -->
+    <TextView
+        android:id="@+id/txtPanoGuide"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerHorizontal="true"
+        android:layout_below="@id/topBar"
+        android:layout_marginTop="24dp"
+        android:background="#80000000"
+        android:padding="8dp"
+        android:text="← Geser perlahan ke kanan, foto 3x →"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:visibility="gone" />
+
+    <!-- Pro controls -->
+    <LinearLayout
+        android:id="@+id/proPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@+id/bottomPanel"
+        android:background="#CC000000"
+        android:orientation="vertical"
+        android:padding="8dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="PRO — Manual (hanya yang didukung perangkat)"
+            android:textColor="#FFD700"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView android:layout_width="70dp" android:layout_height="wrap_content" android:text="ISO" android:textColor="#FFF" />
+            <SeekBar android:id="@+id/seekIso" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" />
+            <TextView android:id="@+id/txtIso" android:layout_width="60dp" android:layout_height="wrap_content" android:text="Auto" android:textColor="#FFF" android:gravity="end" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView android:layout_width="70dp" android:layout_height="wrap_content" android:text="Shutter" android:textColor="#FFF" />
+            <SeekBar android:id="@+id/seekShutter" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" />
+            <TextView android:id="@+id/txtShutter" android:layout_width="60dp" android:layout_height="wrap_content" android:text="Auto" android:textColor="#FFF" android:gravity="end" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView android:layout_width="70dp" android:layout_height="wrap_content" android:text="WB" android:textColor="#FFF" />
+            <SeekBar android:id="@+id/seekWb" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" />
+            <TextView android:id="@+id/txtWb" android:layout_width="60dp" android:layout_height="wrap_content" android:text="Auto" android:textColor="#FFF" android:gravity="end" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView android:layout_width="70dp" android:layout_height="wrap_content" android:text="Fokus" android:textColor="#FFF" />
+            <SeekBar android:id="@+id/seekFocus" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" />
+            <TextView android:id="@+id/txtFocus" android:layout_width="60dp" android:layout_height="wrap_content" android:text="Auto" android:textColor="#FFF" android:gravity="end" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal">
+            <TextView android:layout_width="70dp" android:layout_height="wrap_content" android:text="EV" android:textColor="#FFF" />
+            <SeekBar android:id="@+id/seekEv" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" android:progress="50" />
+            <TextView android:id="@+id/txtEv" android:layout_width="60dp" android:layout_height="wrap_content" android:text="0.0" android:textColor="#FFF" android:gravity="end" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- Bokeh slider (Portrait only) -->
+    <LinearLayout
+        android:id="@+id/bokehPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_above="@+id/bottomPanel"
+        android:background="#CC000000"
+        android:orientation="horizontal"
+        android:padding="12dp"
+        android:visibility="gone">
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="Bokeh" android:textColor="#FFF" />
+        <SeekBar android:id="@+id/seekBokeh" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:max="100" android:progress="60" />
+        <TextView android:id="@+id/txtBokeh" android:layout_width="40dp" android:layout_height="wrap_content" android:text="60" android:textColor="#FFF" android:gravity="end" />
+    </LinearLayout>
+
+    <!-- Bottom panel -->
+    <LinearLayout
+        android:id="@+id/bottomPanel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_alignParentBottom="true"
+        android:background="#000000"
+        android:orientation="vertical"
+        android:paddingBottom="12dp">
+
+        <HorizontalScrollView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:scrollbars="none">
+            <LinearLayout
+                android:id="@+id/modeRow"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:padding="4dp" />
+        </HorizontalScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:orientation="horizontal"
+            android:paddingTop="4dp">
+            <Button android:id="@+id/btnZoom05" style="@style/CamZoomButton" android:text="0.5x" />
+            <Button android:id="@+id/btnZoom1" style="@style/CamZoomButton" android:text="1x" />
+            <Button android:id="@+id/btnZoom2" style="@style/CamZoomButton" android:text="2x" />
+        </LinearLayout>
+
+        <RelativeLayout
+            android:layout_width="match_parent"
+            android:layout_height="88dp"
+            android:layout_marginTop="4dp">
+
+            <ImageView
+                android:id="@+id/imgThumb"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_alignParentStart="true"
+                android:layout_centerVertical="true"
+                android:layout_marginStart="24dp"
+                android:background="#333333"
+                android:scaleType="centerCrop" />
+
+            <Button
+                android:id="@+id/btnShutter"
+                android:layout_width="76dp"
+                android:layout_height="76dp"
+                android:layout_centerInParent="true"
+                android:background="@drawable/shutter_circle"
+                android:text=""
+                android:textColor="#000000" />
+
+            <Button
+                android:id="@+id/btnSwitch"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_alignParentEnd="true"
+                android:layout_centerVertical="true"
+                android:layout_marginEnd="24dp"
+                android:background="#333333"
+                android:text="⇄"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp" />
+        </RelativeLayout>
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center"
+            android:text="InfinityCam 1.0.0 • by RAIS.PROJECT — bukan Samsung Camera"
+            android:textColor="#888888"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/txtCountdown"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_centerInParent="true"
+        android:text=""
+        android:textColor="#FFFFFF"
+        android:textSize="96sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+</RelativeLayout>
