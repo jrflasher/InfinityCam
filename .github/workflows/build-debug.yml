@@ -32,10 +32,13 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # gradle.properties carries the VM's egress-proxy settings; that host
-      # does not exist on a GitHub runner, so strip them before building.
+      # gradle.properties is VM-only and not committed; strip proxy lines
+      # only if the file happens to exist.
       - name: Remove VM-only proxy settings
-        run: sed -i '/systemProp\..*\.proxy/d' gradle.properties
+        run: |
+          if [ -f gradle.properties ]; then
+            sed -i '/systemProp\..*\.proxy/d' gradle.properties
+          fi
 
       - name: Install fixed debug keystore
         run: |
