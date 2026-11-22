@@ -47,8 +47,9 @@ import androidx.camera.core.Preview;
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory;
 import androidx.camera.core.UseCaseGroup;
 import androidx.camera.core.ViewPort;
+import androidx.camera.core.ZoomState;
 import androidx.camera.lifecycle.ProcessCameraProvider;
-import androidx.camera.video.FileOutputOptions;
+import androidx.camera.video.MediaStoreOutputOptions;
 import androidx.camera.video.Quality;
 import androidx.camera.video.QualitySelector;
 import androidx.camera.video.Recorder;
@@ -277,7 +278,9 @@ public class MainActivity extends AppCompatActivity {
     private void setZoom(float z) {
         if (camera == null) return;
         try {
-            Range<Float> range = camera.getCameraInfo().getZoomState().getValue().getZoomRatioRange();
+            ZoomState zs = camera.getCameraInfo().getZoomState().getValue();
+            if (zs == null) return;
+            Range<Float> range = Range.create(zs.getMinZoomRatio(), zs.getMaxZoomRatio());
             if (z < range.getLower()) {
                 toast("0.5x tidak tersedia di lensa ini (min " + range.getLower() + "x)");
                 return;
@@ -316,7 +319,9 @@ public class MainActivity extends AppCompatActivity {
             @Override public boolean onScale(ScaleGestureDetector d) {
                 if (camera != null) {
                     float z = currentZoom * d.getScaleFactor();
-                    Range<Float> r = camera.getCameraInfo().getZoomState().getValue().getZoomRatioRange();
+                    ZoomState zs = camera.getCameraInfo().getZoomState().getValue();
+                    if (zs == null) return true;
+                    Range<Float> r = Range.create(zs.getMinZoomRatio(), zs.getMaxZoomRatio());
                     z = Math.max(r.getLower(), Math.min(r.getUpper(), z));
                     currentZoom = z;
                     camera.getCameraControl().setZoomRatio(z);
@@ -588,8 +593,9 @@ public class MainActivity extends AppCompatActivity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             cv.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_MOVIES + "/InfinityCam");
         }
-        FileOutputOptions opts = new FileOutputOptions.Builder(
-                getContentResolver(), MediaStore.Video.Media.EXTERNAL_CONTENT_URI, cv).build();
+        MediaStoreOutputOptions opts = new MediaStoreOutputOptions.Builder(
+                getContentResolver(), MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+                .setContentValues(cv).build();
         recording = videoCapture.getOutput().prepareRecording(this, opts)
                 .withAudioEnabled()
                 .start(ContextCompat.getMainExecutor(this), event -> {});
