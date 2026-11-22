@@ -74,13 +74,24 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * InfinityCam 1.0.0 — CameraX camera app for Project Infinity X (AOSP Android 17)
- * on Galaxy Note 10 5G (SM-N971N). OneUI 7 / Samsung Camera style modes,
- * re-implemented from scratch. NOT Samsung Camera: no OneUI framework,
- * no Samsung HALs, no Samsung proprietary code or assets.
- * Honest limits: ultrawide (0.5x) only if CameraX exposes zoom < 1x;
- * aux lenses are locked on Exynos AOSP; HDR / manual controls only where
- * the device reports support; Panorama has no auto-stitch.
+ * InfinityCam 1.0.1 — CameraX camera app for Project Infinity X (AOSP Android 17)
+ * on Galaxy Note 10 5G (SM-N971N). Google Pixel Camera style UI, modes
+ * re-implemented from scratch. NOT Samsung Camera and NOT Pixel Camera:
+ * no OneUI framework, no Samsung HALs, no Google proprietary code/assets.
+ *
+ * Wide / Telephoto on Exynos 9825 AOSP (diagnosis, v1.0.0 bug):
+ * CameraX only exposes the logical main lens on InfinityX. The physical
+ * ultrawide (0.5x) and telephoto (2x) lenses are locked by Samsung and are
+ * NOT exposed as separate cameras by Camera2 on this ROM. v1.0.0's 0.5x
+ * button therefore did nothing (min zoom is 1.0x) and 2x relied on an
+ * unclamped setZoomRatio call that could fail / black-screen after a rebind.
+ * v1.0.1 NEVER binds a physical camera ID directly. It enumerates the
+ * cameras with CameraManager, reads the logical camera's ZoomState
+ * min/max zoom ratio, and drives wide/tele purely as zoom ratios on the
+ * main lens: 0.5x is clamped to 1x with a toast and the chip is disabled
+ * when the lens is unavailable; 2x/5x are digital zoom clamped to the
+ * device's max zoom. Every bind / switch is wrapped so a failure falls
+ * back to the main lens instead of crashing.
  */
 public class MainActivity extends AppCompatActivity {
 
@@ -96,22 +107,27 @@ public class MainActivity extends AppCompatActivity {
         ModeDef(Mode m, String l, String h) { mode = m; label = l; hint = h; }
     }
     private static final ModeDef[] MODES = new ModeDef[]{
-            new ModeDef(Mode.PHOTO, "Foto", "Foto"),
-            new ModeDef(Mode.VIDEO, "Video", "Video"),
+            // Pixel Camera order / naming: Night Sight, Portrait, Photo, Video,
+            // then the extra modes kept from v1.0.0.
+            new ModeDef(Mode.NIGHT, "Night Sight", "Night Sight — eksposur panjang"),
             new ModeDef(Mode.PORTRAIT, "Portrait", "Portrait — bokeh simulasi"),
-            new ModeDef(Mode.NIGHT, "Night", "Night — eksposur panjang"),
+            new ModeDef(Mode.PHOTO, "Photo", "Photo"),
+            new ModeDef(Mode.VIDEO, "Video", "Video"),
             new ModeDef(Mode.PRO, "Pro", "Pro — manual"),
             new ModeDef(Mode.PANORAMA, "Panorama", "Panorama — foto lebar"),
             new ModeDef(Mode.FOOD, "Food", "Food — warna hangat"),
-            new ModeDef(Mode.SLOWMO, "Slow Mo", "Slow Motion — video"),
-            new ModeDef(Mode.HYPERLAPSE, "Hyperlapse", "Hyperlapse — burst 2 detik"),
+            new ModeDef(Mode.SLOWMO, "Slow Motion", "Slow Motion — video"),
+            new ModeDef(Mode.HYPERLAPSE, "Timelapse", "Timelapse — burst 2 detik"),
     };
 
     private PreviewView previewView;
-    private TextView txtModeHint, txtCountdown, txtPanoGuide;
+    private TextView txtModeHint, txtCountdown, txtPanoGuide, txtLensNote;
     private LinearLayout modeRow, proPanel, bokehPanel;
     private ImageView imgThumb;
     private Button btnShutter, btnFlash, btnTimer, btnRatio, btnHdr;
+    private Button btnZoom05, btnZoom1, btnZoom2, btnZoom5;
+    private float zoomMin = 1f, zoomMax = 1f; // from the logical camera's ZoomState
+    private boolean lensNoteShown = false;
 
     private ProcessCameraProvider cameraProvider;
     private Camera camera;
@@ -148,12 +164,18 @@ public class MainActivity extends AppCompatActivity {
         proPanel = findViewById(R.id.proPanel);
         bokehPanel = findViewById(R.id.bokehPanel);
         imgThumb = findViewById(R.id.imgThumb);
+        txtLensNote = findViewById(R.id.txtLensNote);
         btnShutter = findViewById(R.id.btnShutter);
         btnFlash = findViewById(R.id.btnFlash);
         btnTimer = findViewById(R.id.btnTimer);
         btnRatio = findViewById(R.id.btnRatio);
         btnHdr = findViewById(R.id.btnHdr);
+        btnZoom05 = findViewById(R.id.btnZoom05);
+        btnZoom1 = findViewById(R.id.btnZoom1);
+        btnZoom2 = findViewById(R.id.btnZoom2);
+        btnZoom5 = findViewById(R.id.btnZoom5);
 
+        enumerateCameras(); // logs physical cameras; never binds a physical ID
         buildModeRow();
         bindTopButtons();
         bindProPanel();
@@ -179,6 +201,82 @@ public class MainActivity extends AppCompatActivity {
         else Toast.makeText(this, "Izin kamera diperlukan", Toast.LENGTH_LONG).show();
     }
 
+    // ---------- Camera enumeration (diagnosis for Wide / Telephoto) ----------
+    // Read-only: lists every Camera2 camera ID, its facing, focal lengths and
+    // physical sub-cameras. On InfinityX / Exynos 9825 the logical back camera
+    // is normally the ONLY back camera exposed; the physical ultrawide and
+    // telephoto lenses do not appear as separate IDs. Nothing here binds a
+    // camera — binding always uses the logical CameraSelector + zoom ratio.
+    private void enumerateCameras() {
+        try {
+            CameraManager cm = (CameraManager) getSystemService(CAMERA_SERVICE);
+            if (cm == null) return;
+            for (String id : cm.getCameraIdList()) {
+                CameraCharacteristics c = cm.getCameraCharacteristics(id);
+                Integer facing = c.get(CameraCharacteristics.LENS_FACING);
+                float[] focal = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+                java.util.Set<String> physical = c.getPhysicalCameraIds();
+                int[] caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES);
+                boolean logical = false;
+                if (caps != null) for (int cap : caps)
+                    if (cap == CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA) logical = true;
+                Log.i(TAG, "Camera id=" + id + " facing=" + facing
+                        + " focal=" + java.util.Arrays.toString(focal)
+                        + " logicalMulti=" + logical
+                        + " physicalIds=" + physical);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "enumerateCameras failed", e);
+        }
+    }
+
+    /** Refresh the zoom chips from the bound camera's ZoomState. Called after every bind. */
+    private void updateZoomButtons() {
+        if (camera == null) return;
+        try {
+            ZoomState zs = camera.getCameraInfo().getZoomState().getValue();
+            if (zs == null) return;
+            zoomMin = zs.getMinZoomRatio();
+            zoomMax = zs.getMaxZoomRatio();
+            // Wide (0.5x) only exists if the logical camera can zoom below 1x.
+            // On InfinityX that is false: the chip is greyed out, never a black screen.
+            setZoomChip(btnZoom05, 0.5f, zoomMin <= 0.51f);
+            setZoomChip(btnZoom1, 1f, zoomMax >= 1f);
+            setZoomChip(btnZoom2, 2f, zoomMax >= 2f);
+            setZoomChip(btnZoom5, 5f, zoomMax >= 5f);
+            if (!lensNoteShown) {
+                lensNoteShown = true;
+                if (zoomMin >= 1f) {
+                    txtLensNote.setText("Lensa Wide & Tele fisik terkunci di InfinityX — zoom digital dari lensa utama");
+                    txtLensNote.setVisibility(View.VISIBLE);
+                    toast("Lensa Wide/Tele fisik tidak tersedia di InfinityX");
+                } else {
+                    txtLensNote.setVisibility(View.GONE);
+                }
+            }
+            refreshZoomChips();
+        } catch (Exception e) {
+            Log.e(TAG, "updateZoomButtons failed", e);
+        }
+    }
+
+    private void setZoomChip(Button b, float z, boolean available) {
+        if (b == null) return;
+        b.setEnabled(available);
+        b.setAlpha(available ? 1f : 0.35f);
+    }
+
+    private void refreshZoomChips() {
+        Button[] chips = {btnZoom05, btnZoom1, btnZoom2, btnZoom5};
+        float[] vals = {0.5f, 1f, 2f, 5f};
+        for (int i = 0; i < chips.length; i++) {
+            if (chips[i] == null) continue;
+            boolean active = Math.abs(currentZoom - vals[i]) < 0.01f;
+            chips[i].setTextColor(active ? 0xFF000000 : 0xFFFFFFFF);
+            chips[i].setBackgroundResource(active ? R.drawable.zoom_chip_active : R.drawable.zoom_chip);
+        }
+    }
+
     // ---------- UI setup ----------
 
     private void buildModeRow() {
@@ -193,12 +291,14 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void refreshModeRow() {
+        // Pixel Camera: active mode white + bold, inactive modes muted grey.
         for (int i = 0; i < modeRow.getChildCount(); i++) {
             Button b = (Button) modeRow.getChildAt(i);
             ModeDef d = (ModeDef) b.getTag();
             boolean active = d.mode == currentMode;
-            b.setTextColor(active ? 0xFFFFD700 : 0xFFCCCCCC);
+            b.setTextColor(active ? 0xFFFFFFFF : 0xFF9AA0A6);
             b.setTextSize(active ? 16 : 14);
+            b.setTypeface(null, active ? android.graphics.Typeface.BOLD : android.graphics.Typeface.NORMAL);
         }
     }
 
@@ -237,6 +337,18 @@ public class MainActivity extends AppCompatActivity {
             btnHdr.setText(hdrOn ? "HDR On" : "HDR Off");
             applyHdr();
         });
+        findViewById(R.id.btnSettings).setOnClickListener(v -> {
+            // Pixel-style settings shortcut: show the lens / zoom info.
+            if (txtLensNote.getVisibility() == View.VISIBLE) {
+                txtLensNote.setVisibility(View.GONE);
+            } else if (camera != null) {
+                txtLensNote.setText("Zoom lensa utama: " + zoomMin + "x – " + zoomMax
+                        + "x • Wide/Tele fisik terkunci di InfinityX");
+                txtLensNote.setVisibility(View.VISIBLE);
+            } else {
+                toast("InfinityCam 1.0.1 — Pixel style");
+            }
+        });
     }
 
     private void bindProPanel() {
@@ -270,26 +382,38 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void bindZoomButtons() {
-        findViewById(R.id.btnZoom05).setOnClickListener(v -> setZoom(0.5f));
-        findViewById(R.id.btnZoom1).setOnClickListener(v -> setZoom(1f));
-        findViewById(R.id.btnZoom2).setOnClickListener(v -> setZoom(2f));
+        btnZoom05.setOnClickListener(v -> setZoom(0.5f));
+        btnZoom1.setOnClickListener(v -> setZoom(1f));
+        btnZoom2.setOnClickListener(v -> setZoom(2f));
+        btnZoom5.setOnClickListener(v -> setZoom(5f));
     }
 
+    /**
+     * Wide / Telephoto fix (v1.0.1): zoom is ONLY a ratio on the logical main
+     * lens, clamped to [zoomMin, zoomMax]. Requesting 0.5x when zoomMin is 1x
+     * (aux lens locked) falls back to 1x with a toast — never a crash, never
+     * a black screen, never a bind to a non-existent camera.
+     */
     private void setZoom(float z) {
         if (camera == null) return;
         try {
             ZoomState zs = camera.getCameraInfo().getZoomState().getValue();
             if (zs == null) return;
-            Range<Float> range = Range.create(zs.getMinZoomRatio(), zs.getMaxZoomRatio());
-            if (z < range.getLower()) {
-                toast("0.5x tidak tersedia di lensa ini (min " + range.getLower() + "x)");
-                return;
+            float min = zs.getMinZoomRatio(), max = zs.getMaxZoomRatio();
+            if (z < min) {
+                toast("Lensa Wide tidak tersedia di InfinityX — pakai 1x (zoom digital)");
+                z = min;
+            } else if (z > max) {
+                toast("Zoom maks " + max + "x di perangkat ini");
+                z = max;
             }
-            if (z > range.getUpper()) z = range.getUpper();
             currentZoom = z;
             camera.getCameraControl().setZoomRatio(z);
+            refreshZoomChips();
         } catch (Exception e) {
-            toast("Zoom tidak didukung: " + e.getMessage());
+            Log.e(TAG, "setZoom failed, staying on main lens", e);
+            toast("Zoom gagal — kembali ke lensa utama");
+            try { camera.getCameraControl().setZoomRatio(1f); currentZoom = 1f; refreshZoomChips(); } catch (Exception ignored) {}
         }
     }
 
@@ -297,9 +421,17 @@ public class MainActivity extends AppCompatActivity {
         btnShutter.setOnClickListener(v -> onShutter());
         findViewById(R.id.btnSwitch).setOnClickListener(v -> {
             if (isRecording) { toast("Stop video dulu"); return; }
+            CameraSelector prev = selector;
             selector = (selector == CameraSelector.DEFAULT_BACK_CAMERA)
                     ? CameraSelector.DEFAULT_FRONT_CAMERA : CameraSelector.DEFAULT_BACK_CAMERA;
-            bindCamera();
+            try {
+                bindCamera();
+                if (camera == null) throw new IllegalStateException("kamera depan tidak tersedia");
+            } catch (Exception e) {
+                selector = prev; // fall back to the lens that was working
+                try { bindCamera(); } catch (Exception ignored) {}
+                toast("Kamera depan tidak tersedia — kembali ke lensa utama");
+            }
         });
     }
 
@@ -325,6 +457,7 @@ public class MainActivity extends AppCompatActivity {
                     z = Math.max(r.getLower(), Math.min(r.getUpper(), z));
                     currentZoom = z;
                     camera.getCameraControl().setZoomRatio(z);
+                    refreshZoomChips();
                 }
                 return true;
             }
@@ -388,11 +521,27 @@ public class MainActivity extends AppCompatActivity {
             } else {
                 camera = cameraProvider.bindToLifecycle(this, selector, preview, imageCapture);
             }
-            camera.getCameraControl().setZoomRatio(currentZoom);
+            // Clamp the remembered zoom to this lens's real range (a rebind
+            // must never re-apply an out-of-range ratio — that was the v1.0.0
+            // telephoto black-screen path).
+            try {
+                ZoomState zs = camera.getCameraInfo().getZoomState().getValue();
+                if (zs != null) {
+                    currentZoom = Math.max(zs.getMinZoomRatio(), Math.min(zs.getMaxZoomRatio(), currentZoom));
+                    camera.getCameraControl().setZoomRatio(currentZoom);
+                }
+            } catch (Exception e) { Log.e(TAG, "zoom clamp failed", e); }
+            updateZoomButtons();
             applyHdr();
             if (currentMode == Mode.NIGHT) applyNightExposure(true);
         } catch (Exception e) {
             Log.e(TAG, "bind failed", e);
+            // Fall back to the main back lens once; never leave a black screen.
+            if (selector != CameraSelector.DEFAULT_BACK_CAMERA) {
+                selector = CameraSelector.DEFAULT_BACK_CAMERA;
+                currentZoom = 1f;
+                try { bindCamera(); return; } catch (Exception ignored) {}
+            }
             toast("Bind kamera gagal: " + e.getMessage());
         }
         refreshThumb();
